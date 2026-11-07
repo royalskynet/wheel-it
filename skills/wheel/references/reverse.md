@@ -4,6 +4,8 @@
 
 先分流：其實有公開源碼或 sourcemap → 回三軸讀原始碼。只想知道對方用了哪些輪子 → 依賴清單就夠，不下到符號層。
 
+有 REA 就先用它：工具清單出現 `rea` MCP（[morluto/rea](https://github.com/morluto/rea)，MIT）時，Electron／JS app 用 `analyze_javascript_application`，網頁 bundle 用 `analyze_web_bundle`，其他格式照它的工具目錄挑。一律要 `detail: summary` 並另存 evidence bundle，只把摘要帶回來。目標指到實際程式碼子目錄（例 `dist/`），整包連 `node_modules` 會逾時；1000 個檔以上的目錄實測約 10 分鐘、峰值 2GB+，已知要看哪幾檔就用 `source_path` 只選那幾檔。沒有 REA 就用下表。
+
 | 目標 | 指令（只讀，輸出行數或前 N 筆） |
 |---|---|
 | Electron | `npx asar list <app>/resources/app.asar`；`npx asar extract-file` 取 `package.json` 看依賴 |
