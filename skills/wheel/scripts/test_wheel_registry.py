@@ -57,6 +57,8 @@ def run(*args, **kw):
     if kw.get("registry") is not None:
         env["WHEEL_REGISTRY"] = kw["registry"]
     env.pop("PYTHONPATH", None)
+    # A real force.json that is on would refuse every `add 自造` below.
+    env["WHEEL_FORCE"] = kw.get("force") or os.path.join(tempfile.gettempdir(), "wheel-test-no-force.json")
     if kw.get("home") is not None:
         env["HOME"] = kw["home"]
     return subprocess.run([sys.executable, CLI] + [str(a) for a in args],
@@ -385,6 +387,51 @@ def test_exit_codes_stay_distinct(fails):
         eq(run("check", registry=path).returncode, 1, "1 = registry broken", fails)
 
 
+# --- force mode: narrows verdicts after two failures, or pauses ---------------
+def test_force_trip_defaults_to_force_and_bans_self_build(fails):
+    with tempfile.TemporaryDirectory() as tmp:
+        reg, fj = registry(tmp, "r.tsv"), registry(tmp, "force.json")
+        ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=force"),
+           "fresh state is off with mode force", fails)
+        p = run("force", "trip", "Edit a.py", force=fj)
+        ok(p.returncode == 0 and "force mode ON" in p.stdout, "trip in force mode turns force on", fails)
+        ok(run("force", "status", force=fj).stdout.startswith("on（auto："), "status shows auto source", fails)
+        for v in ("自造", "借鏡｜自造"):
+            eq(run("add", v, "q", "p", 30, registry=reg, force=fj).returncode, 2,
+               "force on refuses %s" % v, fails)
+        eq(rows_of(reg), [], "refused add leaves the registry untouched", fails)
+        eq(run("add", "借鏡", "q", "p", 30, registry=reg, force=fj).returncode, 0,
+           "force on still accepts 借鏡", fails)
+        run("force", "off", force=fj)
+        eq(run("add", "自造", "q", "p", 30, registry=reg, force=fj).returncode, 0,
+           "force off accepts 自造 again", fails)
+
+
+def test_force_pause_mode_offers_three_ways_out(fails):
+    with tempfile.TemporaryDirectory() as tmp:
+        fj = registry(tmp, "force.json")
+        eq(run("force", "mode", "pause", force=fj).returncode, 0, "mode pause accepted", fails)
+        out = run("force", "trip", "Bash npm test", force=fj).stdout
+        for word in ("收尾", "換路", "/wheel f"):
+            ok(word in out, "pause offers %s" % word, fails)
+        ok(run("force", "status", force=fj).stdout.startswith("off"), "pause does not turn force on", fails)
+        p = run("force", "on", "manual", "使用者 /wheel f", force=fj)
+        ok(p.returncode == 0 and "manual" in p.stdout, "manual on works in pause mode", fails)
+
+
+def test_force_refuses_bad_args_and_survives_a_broken_file(fails):
+    with tempfile.TemporaryDirectory() as tmp:
+        fj = registry(tmp, "force.json")
+        for args in (("force",), ("force", "on"), ("force", "on", "robot", "x"),
+                     ("force", "mode", "maybe"), ("force", "trip"), ("force", "bogus")):
+            eq(run(*args, force=fj).returncode, 2, "usage error: %s" % " ".join(args), fails)
+        with open(fj, "w") as fh:
+            fh.write("{not json")
+        ok(run("force", "status", force=fj).stdout.startswith("off"), "broken force.json reads as off", fails)
+        eq(run("add", "自造", "q", "p", 30, registry=registry(tmp, "r.tsv"), force=fj).returncode, 0,
+           "broken force.json does not lock out 自造", fails)
+
+
 def main():
     fails = []
     for fn in (test_add_writes_one_row,
@@ -405,7 +452,10 @@ def main():
                test_check_empty_and_missing,
                test_default_path_uses_home_not_a_real_registry,
                test_unknown_subcommand_is_a_usage_error,
-               test_exit_codes_stay_distinct):
+               test_exit_codes_stay_distinct,
+               test_force_trip_defaults_to_force_and_bans_self_build,
+               test_force_pause_mode_offers_three_ways_out,
+               test_force_refuses_bad_args_and_survives_a_broken_file):
         try:
             fn(fails)
         except Exception as e:
@@ -420,8 +470,9 @@ def main():
           "embedded TAB or newline without touching the file, find is literal + "
           "case-insensitive + last-5 + live/expired + 無舊卡, check reports every "
           "violation by line and passes a clean file, default path honours "
-          "WHEEL_REGISTRY then HOME, exit codes 0/1/2 stay distinct"
-          % (len(CHECKS), 19, len(BAD_VERDICTS), len(BAD_DAYS)))
+          "WHEEL_REGISTRY then HOME, exit codes 0/1/2 stay distinct, force mode "
+          "bans 自造 / pause offers 3 ways out / broken flag fails open"
+          % (len(CHECKS), 22, len(BAD_VERDICTS), len(BAD_DAYS)))
 
 
 if __name__ == "__main__":

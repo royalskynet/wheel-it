@@ -30,6 +30,7 @@ Cost: the contract is argv → exit code → stdout, so `test_wheel_registry.py`
 drives this as a subprocess and never touches a real `~/.wheel/registry.tsv`.
 """
 import datetime
+import json
 import os
 import re
 import sys
@@ -49,6 +50,25 @@ COLUMNS = 5
 DAY_CHOICES = ("30", "90", "180")
 DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 DEFAULT_PATH = os.path.expanduser("~/.wheel/registry.tsv")
+DEFAULT_FORCE_PATH = os.path.expanduser("~/.wheel/force.json")
+# SKILL.md §6.5: 自造的實作連續失敗兩次（Genie fail_streak 的既有計數器已經在
+# context 跳出警告）才會走到這裡 -- force mode 不重算失敗次數，只記「要不要收窄
+# 裁決」這一個新狀態，計數本身永遠留在 fail_streak.py，這裡不重造。
+FORCE_SOURCES = ("manual", "auto")
+# What a trip does: force = narrow verdicts at once; pause = stop and offer
+# 收尾／換路／force. Default force: a headless box has nobody to answer a pause.
+ON_FAIL2 = ("force", "pause")
+FORCE_BANNED = "自造"
+PAUSE_TEXT = (
+    "wheel pause：{fp} 在 wheel 發動後連續失敗兩次，先停手，三選一：\n"
+    "  1. 收尾：保留已成功的部分，未完成項寫成待辦回報\n"
+    "  2. 換路：重跑 /wheel，換一個裁決（不重試同一修法）\n"
+    "  3. 強制：/wheel f，之後只准用現成輪子膠水收尾，禁止自造"
+)
+FORCE_TEXT = (
+    "wheel force mode ON（{source}：{reason}）：裁決只能是 不做／換題／設定／採用／改用／借鏡，"
+    "禁止自造；只用社群現成輪子或做法膠水收尾。解除：/wheel off"
+)
 
 USAGE = """wheel_registry -- 輪子卡登記簿（skills/wheel/SKILL.md 第 0 步與收尾登記）
   find <kw> [kw...]                    找舊卡（不分大小寫、字面比對），最多印最後 5 筆
@@ -56,9 +76,15 @@ USAGE = """wheel_registry -- 輪子卡登記簿（skills/wheel/SKILL.md 第 0 �
   add <verdict> <problem> <choice> <30|90|180>
                                       登記一筆，review_by = 今天 + 天數
   check                               逐列檢查欄數／日期／verdict；全對印 ok <列數> rows
+  force on <manual|auto> <reason>      開 force mode（§6.5）：裁決收窄為 不做／換題／設定／採用／改用／借鏡
+  force off                            解除 force mode
+  force status                         印 on/off 與失敗兩次時的行為（force 或 pause）
+  force mode <force|pause>             設定失敗兩次時：直接強制，或暫停給三個選項
+  force trip <fingerprint>             失敗兩次時呼叫（Genie fail_streak）；依 mode 開 force 或印 pause 選項
 verdict: %s
         多個用全形 ｜ 串接，例如 設定｜不做
 檔案: %s（環境變數 WHEEL_REGISTRY 可改）
+force 檔: %s（環境變數 WHEEL_FORCE 可改）
 """
 
 
@@ -69,6 +95,11 @@ def registry_path():
     row to a file named "".
     """
     return os.environ.get("WHEEL_REGISTRY") or DEFAULT_PATH
+
+
+def force_path():
+    """`$WHEEL_FORCE`, else `~/.wheel/force.json`. Same empty-means-unset rule as registry_path."""
+    return os.environ.get("WHEEL_FORCE") or DEFAULT_FORCE_PATH
 
 
 def today():
@@ -176,6 +207,8 @@ def cmd_add(args):
     if not verdict_ok(verdict):
         bad.append("verdict 不合法：%r（只能是 %s，或用全形 ｜ 串接數個）"
                    % (verdict, " / ".join(VERDICTS)))
+    if FORCE_BANNED in verdict.split(VERDICT_SEP) and force_on():
+        bad.append("force mode 開著，裁決不得含「自造」；改選 採用／改用／借鏡，或 /wheel off 解除")
     if days not in DAY_CHOICES:
         bad.append("天數只能是 %s（依領域變化速度：快 30／中 90／慢 180），收到 %r"
                    % ("/".join(DAY_CHOICES), days))
@@ -238,10 +271,82 @@ def cmd_check(args):
     return 0
 
 
+def load_force():
+    """-> dict. Missing or unreadable file is off with the default mode: a
+    broken flag must not lock anyone out of 自造 forever."""
+    try:
+        with open(force_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            return data
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def save_force(data):
+    path = force_path()
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def force_on():
+    return load_force().get("on") is True
+
+
+def mode_of(data):
+    return data.get("on_fail2") if data.get("on_fail2") in ON_FAIL2 else ON_FAIL2[0]
+
+
+def cmd_force(args):
+    if not args:
+        return usage("force 需要子指令：on / off / status / mode / trip")
+    sub, rest = args[0], args[1:]
+    data = load_force()
+    if sub == "on":
+        if len(rest) < 2 or rest[0] not in FORCE_SOURCES:
+            return usage("force on <manual|auto> <reason>")
+        data.update(on=True, source=rest[0], reason=" ".join(rest[1:]),
+                    since=today().isoformat())
+        save_force(data)
+        print(FORCE_TEXT.format(source=data["source"], reason=data["reason"]))
+        return 0
+    if sub == "off" and not rest:
+        data["on"] = False
+        save_force(data)
+        print("wheel force mode OFF")
+        return 0
+    if sub == "status" and not rest:
+        if data.get("on") is True:
+            print("on（%s：%s，since %s）on_fail2=%s" % (
+                data.get("source"), data.get("reason"), data.get("since"), mode_of(data)))
+        else:
+            print("off on_fail2=%s" % mode_of(data))
+        return 0
+    if sub == "mode" and len(rest) == 1 and rest[0] in ON_FAIL2:
+        data["on_fail2"] = rest[0]
+        save_force(data)
+        print("on_fail2=%s" % rest[0])
+        return 0
+    if sub == "trip" and rest:
+        fp = " ".join(rest)
+        if data.get("on") is True:
+            print(FORCE_TEXT.format(source=data.get("source"), reason=data.get("reason")))
+            return 0
+        if mode_of(data) == "pause":
+            print(PAUSE_TEXT.format(fp=fp))
+            return 0
+        return cmd_force(["on", "auto", "%s 在 wheel 發動後連續失敗兩次" % fp])
+    return usage("force 子指令或引數不對：%s" % " ".join(args))
+
+
 def usage(message=None):
     if message:
         sys.stderr.write("wheel_registry: %s\n" % message)
-    sys.stderr.write(USAGE % (" / ".join(VERDICTS), registry_path()))
+    sys.stderr.write(USAGE % (" / ".join(VERDICTS), registry_path(), force_path()))
     return 2
 
 
@@ -250,7 +355,7 @@ def main(argv):
     if not args:
         return usage()
     if args[0] in ("-h", "--help", "help"):
-        sys.stdout.write(USAGE % (" / ".join(VERDICTS), registry_path()))
+        sys.stdout.write(USAGE % (" / ".join(VERDICTS), registry_path(), force_path()))
         return 0
     cmd, rest = args[0], args[1:]
     try:
@@ -260,6 +365,8 @@ def main(argv):
             return cmd_add(rest)
         if cmd == "check":
             return cmd_check(rest)
+        if cmd == "force":
+            return cmd_force(rest)
     except OSError as e:
         sys.stderr.write("wheel_registry: %s：%s\n" % (registry_path(), e))
         return 1

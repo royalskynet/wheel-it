@@ -12,6 +12,8 @@ description: 找最好解法：動手前查三軸 prior-art（官方文檔／社
 
 ## 0. 先查之前的決定
 
+引數是 `f`／`force`／`off`／`pause` → 只跑 §6.5 對應那行，不查三軸，回一句狀態就停。其餘先跑 `force status`，`on` 就整輪照 §6.5。
+
 ```bash
 python3 <本 skill 目錄>/scripts/wheel_registry.py find "<關鍵字1>" "<關鍵字2>" "<英文說法>"
 ```
@@ -71,6 +73,20 @@ Electron／APK／binary／私有 registry 包；有公開源碼或 sourcemap 就
 - 不做／換題／設定／採用且無警示 → 直接做。
 - 自造，或帶警示（授權、活躍度、難回退）的採用／改用 → 有第二意見工具（另一模型、reviewer agent）就送問題、候選、淘汰理由（不送整檔、不送密鑰）；不同意 → 補查一輪（只一次）→ 帶警示照做。沒有 → 卡片寫一句自造理由後繼續。
 
+## 6.5 Force mode（失敗兩次後只准膠水）
+
+wheel 發動過的 session 裡，同一動作連續失敗兩次，Genie `fail_streak` 會自動呼叫 `force trip`，結果注入 context。計數由 fail_streak 負責，這裡不再數一次。trip 依 `on_fail2` 走兩條路：
+- `force`（預設）：直接開 force。之後裁決只剩 不做／換題／設定／採用／改用／借鏡，**禁止自造**。只用社群現成輪子或做法膠水收尾。`add` 遇到含自造的裁決會回 exit 2。
+- `pause`：先停手，給三個選項：收尾、換路（重跑 wheel 換裁決）、`/wheel f`。
+
+```bash
+S=<本 skill 目錄>/scripts/wheel_registry.py
+python3 $S force on manual "使用者 /wheel f"   # /wheel f、/wheel force
+python3 $S force off                            # /wheel off
+python3 $S force mode pause                     # /wheel pause；改回 force mode force
+```
+force 開著時，自造候選全淘汰，淘汰理由寫「force mode」。三軸找不到可膠水的現成做法 → 裁決填「不做」或「換題」，回報缺口，不偷偷自造。
+
 ## 7. 輸出
 
 **輪子卡**（≤12 行；plan 的「輪子：」行＝卡片首行）：
@@ -82,6 +98,7 @@ Electron／APK／binary／私有 registry 包；有公開源碼或 sourcemap 就
 官方：<URL 或 無>　社群共識：<一句＋URL（Standard 起兩個來源）>
 社群計票：…（有做才寫）
 警示：<無 或 授權/活躍/難回退…>
+強制：<force on（來源）——沒開就省略這行>
 ```
 
 **對方不寫程式時**，先白話、卡片放最後：`結論：建議 <方案>（<白話裁決>），因為 <一句>。` 再列 1–3 個他真的可能選的（最簡單／最平衡／最自由，各一句適合誰與優缺點）。一個明顯勝出就只給它＋一句其他為何出局；不湊假平衡選項。
