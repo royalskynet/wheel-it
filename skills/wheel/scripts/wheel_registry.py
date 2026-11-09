@@ -56,8 +56,8 @@ DEFAULT_FORCE_PATH = os.path.expanduser("~/.wheel/force.json")
 # 裁決」這一個新狀態，計數本身永遠留在 fail_streak.py，這裡不重造。
 FORCE_SOURCES = ("manual", "auto")
 # What a trip does: force = narrow verdicts at once; pause = stop and offer
-# 收尾／換路／force. Default force: a headless box has nobody to answer a pause.
-ON_FAIL2 = ("force", "pause")
+# 收尾／換路／force. First entry is the default: stop and let the user pick.
+ON_FAIL2 = ("pause", "force")
 FORCE_BANNED = "自造"
 PAUSE_TEXT = (
     "wheel pause：{fp} 在 wheel 發動後連續失敗兩次，先停手，三選一：\n"

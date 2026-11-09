@@ -76,14 +76,14 @@ Electron／APK／binary／私有 registry 包；有公開源碼或 sourcemap 就
 ## 6.5 Force mode（失敗兩次後只准膠水）
 
 wheel 發動過的 session 裡，同一動作連續失敗兩次，Genie `fail_streak` 會自動呼叫 `force trip`，結果注入 context。計數由 fail_streak 負責，這裡不再數一次。trip 依 `on_fail2` 走兩條路：
-- `force`（預設）：直接開 force。之後裁決只剩 不做／換題／設定／採用／改用／借鏡，**禁止自造**。只用社群現成輪子或做法膠水收尾。`add` 遇到含自造的裁決會回 exit 2。
-- `pause`：先停手，給三個選項：收尾、換路（重跑 wheel 換裁決）、`/wheel f`。
+- `pause`（預設）：先停手，給三個選項：收尾、換路（重跑 wheel 換裁決）、`/wheel f`。
+- `force`：直接開 force。之後裁決只剩 不做／換題／設定／採用／改用／借鏡，**禁止自造**。只用社群現成輪子或做法膠水收尾。`add` 遇到含自造的裁決會回 exit 2。
 
 ```bash
 S=<本 skill 目錄>/scripts/wheel_registry.py
 python3 $S force on manual "使用者 /wheel f"   # /wheel f、/wheel force
 python3 $S force off                            # /wheel off
-python3 $S force mode pause                     # /wheel pause；改回 force mode force
+python3 $S force mode force                     # 失敗兩次改成直接強制；改回 force mode pause
 ```
 force 開著時，自造候選全淘汰，淘汰理由寫「force mode」。三軸找不到可膠水的現成做法 → 裁決填「不做」或「換題」，回報缺口，不偷偷自造。
 

@@ -391,8 +391,12 @@ def test_exit_codes_stay_distinct(fails):
 def test_force_trip_defaults_to_force_and_bans_self_build(fails):
     with tempfile.TemporaryDirectory() as tmp:
         reg, fj = registry(tmp, "r.tsv"), registry(tmp, "force.json")
-        ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=force"),
-           "fresh state is off with mode force", fails)
+        ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=pause"),
+           "fresh state is off with mode pause", fails)
+        ok("收尾" in run("force", "trip", "Edit a.py", force=fj).stdout,
+           "default trip pauses", fails)
+        ok(run("force", "status", force=fj).stdout.startswith("off"), "default trip leaves force off", fails)
+        run("force", "mode", "force", force=fj)
         p = run("force", "trip", "Edit a.py", force=fj)
         ok(p.returncode == 0 and "force mode ON" in p.stdout, "trip in force mode turns force on", fails)
         ok(run("force", "status", force=fj).stdout.startswith("on（auto："), "status shows auto source", fails)
