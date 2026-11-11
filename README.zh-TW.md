@@ -28,6 +28,10 @@ npx skills add https://github.com/royalskynet/wheel-it --skill wheel
 
 逆向只到「事實與清單」：列 asar／包成員、`otool -L`、`codesign -dv`、strings、sourcemap。不整份反編譯、不碰 DRM。全量 rea（Ghidra／IDA 深層反編譯）不在本 skill 範圍。
 
+## `/wheel fix <症狀或錯誤原文>`
+
+用 wheel 輔助修復：到社群找同樣問題與現成修法、輪子。先驗錯誤到底出自哪個元件，用錯誤原文逐字查上游 issue 與未合 PR，對版本（上游修了沒、有沒有 workaround），最後才找 patch／wrapper 類輪子。修法採用前先用最小重現實測，輪子卡多一行「修法來源」URL。它不取代你自己的除錯流程，重現、根因、驗收仍由你做。步驟見 [skills/wheel/references/fix.md](skills/wheel/references/fix.md)。
+
 ## 功能
 
 - **重述問題**：先問「不做會怎樣」，能刪就裁決成 `不做`；真問題是別的 → `換題`。

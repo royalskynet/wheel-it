@@ -28,6 +28,10 @@ Installs to `~/.hermes/skills/wheel/`. **Start a new session** for it to be inde
 
 The reverse pass stops at facts and inventory: asar/package listings, `otool -L`, `codesign -dv`, strings, sourcemaps. No whole-binary decompilation, no DRM. Full REA (Ghidra/IDA deep decompilation) is out of scope.
 
+## `/wheel fix <symptom or error text>`
+
+Use wheel to repair a bug: search the community for the same problem and for ready-made fixes or wheels. It checks which component the error really comes from, searches upstream issues and unmerged PRs with the verbatim error text, compares versions (fixed upstream? workaround?), and only then looks for patch/wrapper wheels. A fix is adopted after a minimal reproduction, and the card carries a `修法來源` (fix source) URL. It does not replace your own debugging flow; reproduction, root cause and acceptance stay yours. Steps: [skills/wheel/references/fix.md](skills/wheel/references/fix.md).
+
 ## What it does
 
 - **Restate** — "what if we did nothing?" can end at `不做`; a different real problem ends at `換題`.

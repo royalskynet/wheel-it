@@ -12,7 +12,7 @@ description: 找最好解法：動手前查三軸 prior-art（官方文檔／社
 
 ## 0. 先查之前的決定
 
-引數是 `f`／`force`／`off`／`pause` → 只跑 §6.5 對應那行，不查三軸，回一句狀態就停。其餘先跑 `force status`，`on` 就整輪照 §6.5。
+引數是 `f`／`force`／`off`／`pause` → 只跑 §6.5 對應那行，不查三軸，回一句狀態就停。引數以 `fix` 開頭 → 症狀照 [references/fix.md](references/fix.md) 跑（仍先做下面的 `force status`）。其餘先跑 `force status`，`on` 就整輪照 §6.5。
 
 ```bash
 python3 <本 skill 目錄>/scripts/wheel_registry.py find "<關鍵字1>" "<關鍵字2>" "<英文說法>"
