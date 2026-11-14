@@ -20,6 +20,7 @@ tempdir for the default-path case. The user's real `~/.wheel/registry.tsv` is
 their decisions; no test here reads or writes it.
 """
 import datetime
+import json
 import os
 import subprocess
 import sys
@@ -391,30 +392,44 @@ def test_exit_codes_stay_distinct(fails):
 def test_force_trip_defaults_to_force_and_bans_self_build(fails):
     with tempfile.TemporaryDirectory() as tmp:
         reg, fj = registry(tmp, "r.tsv"), registry(tmp, "force.json")
-        ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=pause"),
-           "fresh state is off with mode pause", fails)
-        ok("收尾" in run("force", "trip", "Edit a.py", force=fj).stdout,
-           "default trip pauses", fails)
-        ok(run("force", "status", force=fj).stdout.startswith("off"), "default trip leaves force off", fails)
-        run("force", "mode", "force", force=fj)
+        ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=force"),
+           "fresh state is off with mode force", fails)
         p = run("force", "trip", "Edit a.py", force=fj)
-        ok(p.returncode == 0 and "force mode ON" in p.stdout, "trip in force mode turns force on", fails)
+        ok(p.returncode == 0 and "force mode ON" in p.stdout, "default trip turns force on", fails)
         ok(run("force", "status", force=fj).stdout.startswith("on（auto："), "status shows auto source", fails)
         for v in ("自造", "借鏡｜自造"):
             eq(run("add", v, "q", "p", 30, registry=reg, force=fj).returncode, 2,
                "force on refuses %s" % v, fails)
         eq(rows_of(reg), [], "refused add leaves the registry untouched", fails)
-        eq(run("add", "借鏡", "q", "p", 30, registry=reg, force=fj).returncode, 0,
-           "force on still accepts 借鏡", fails)
+        p = run("add", "借鏡", "q", "p", 30, registry=reg, force=fj)
+        ok(p.returncode == 0 and "自動解除" in p.stdout, "force on still accepts 借鏡 and says it is used up", fails)
+        ok(run("force", "status", force=fj).stdout.startswith("off"), "one accepted add uses force up", fails)
+        eq(run("add", "自造", "q", "p", 30, registry=reg, force=fj).returncode, 0,
+           "used-up force accepts 自造 again", fails)
+        run("force", "on", "manual", "x", force=fj)
         run("force", "off", force=fj)
         eq(run("add", "自造", "q", "p", 30, registry=reg, force=fj).returncode, 0,
            "force off accepts 自造 again", fails)
+
+
+def test_force_left_on_expires(fails):
+    with tempfile.TemporaryDirectory() as tmp:
+        reg, fj = registry(tmp, "r.tsv"), registry(tmp, "force.json")
+        old = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
+        for since, want, label in ((today(), "on", "today"), (old, "off", "two days old"),
+                                   ("soon", "off", "unreadable since")):
+            with open(fj, "w", encoding="utf-8") as fh:
+                json.dump({"on": True, "source": "manual", "reason": "x", "since": since}, fh)
+            ok(run("force", "status", force=fj).stdout.startswith(want), "force %s reads %s" % (label, want), fails)
+        eq(run("add", "自造", "q", "p", 30, registry=reg, force=fj).returncode, 0,
+           "expired force does not ban 自造", fails)
 
 
 def test_force_pause_mode_offers_three_ways_out(fails):
     with tempfile.TemporaryDirectory() as tmp:
         fj = registry(tmp, "force.json")
         eq(run("force", "mode", "pause", force=fj).returncode, 0, "mode pause accepted", fails)
+        ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=pause"), "status shows pause", fails)
         out = run("force", "trip", "Bash npm test", force=fj).stdout
         for word in ("收尾", "換路", "/wheel f"):
             ok(word in out, "pause offers %s" % word, fails)
@@ -458,6 +473,7 @@ def main():
                test_unknown_subcommand_is_a_usage_error,
                test_exit_codes_stay_distinct,
                test_force_trip_defaults_to_force_and_bans_self_build,
+               test_force_left_on_expires,
                test_force_pause_mode_offers_three_ways_out,
                test_force_refuses_bad_args_and_survives_a_broken_file):
         try:

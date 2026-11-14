@@ -74,17 +74,19 @@ Electron／APK／binary／私有 registry 包；有公開源碼或 sourcemap 就
 - 不做／換題／設定／採用且無警示 → 直接做。
 - 自造，或帶警示（授權、活躍度、難回退）的採用／改用 → 有第二意見工具（另一模型、reviewer agent）就送問題、候選、淘汰理由（不送整檔、不送密鑰）；不同意 → 補查一輪（只一次）→ 帶警示照做。沒有 → 卡片寫一句自造理由後繼續。
 
-## 6.5 Force mode（失敗兩次後只准膠水）
+## 6.5 Force mode（失敗兩次後，下一筆裁決只准膠水）
 
 wheel 發動過的 session 裡，同一動作連續失敗兩次，Genie `fail_streak` 會自動呼叫 `force trip`，結果注入 context。計數由 fail_streak 負責，這裡不再數一次。trip 依 `on_fail2` 走兩條路：
-- `pause`（預設）：先停手，給三個選項：收尾、換路（重跑 wheel 換裁決）、`/wheel f`。
-- `force`：直接開 force。之後裁決只剩 不做／換題／設定／採用／改用／借鏡，**禁止自造**。只用社群現成輪子或做法膠水收尾。`add` 遇到含自造的裁決會回 exit 2。
+- `force`（預設）：開 force 一次。下一筆裁決只剩 不做／換題／設定／採用／改用／借鏡，**禁止自造**。只用社群現成輪子或做法膠水收尾。`add` 遇到含自造的裁決會回 exit 2。
+- `pause`：先停手，給三個選項：收尾、換路（重跑 wheel 換裁決）、`/wheel f`。
+
+force 只管一筆裁決：`add` 成功登記後自動解除；沒用掉的隔 1 天失效。`/wheel f` 手動開的也一樣。
 
 ```bash
 S=<本 skill 目錄>/scripts/wheel_registry.py
 python3 $S force on manual "使用者 /wheel f"   # /wheel f、/wheel force
-python3 $S force off                            # /wheel off
-python3 $S force mode force                     # 失敗兩次改成直接強制；改回 force mode pause
+python3 $S force off                            # /wheel off（提早解除）
+python3 $S force mode pause                     # 失敗兩次改成先停手給選項；改回 force mode force
 ```
 force 開著時，自造候選全淘汰，淘汰理由寫「force mode」。三軸找不到可膠水的現成做法 → 裁決填「不做」或「換題」，回報缺口，不偷偷自造。
 

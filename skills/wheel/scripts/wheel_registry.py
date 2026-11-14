@@ -55,9 +55,13 @@ DEFAULT_FORCE_PATH = os.path.expanduser("~/.wheel/force.json")
 # context 跳出警告）才會走到這裡 -- force mode 不重算失敗次數，只記「要不要收窄
 # 裁決」這一個新狀態，計數本身永遠留在 fail_streak.py，這裡不重造。
 FORCE_SOURCES = ("manual", "auto")
-# What a trip does: force = narrow verdicts at once; pause = stop and offer
-# 收尾／換路／force. First entry is the default: stop and let the user pick.
-ON_FAIL2 = ("pause", "force")
+# What a trip does: force = narrow verdicts for one decision; pause = stop and
+# offer 收尾／換路／force. First entry is the default.
+ON_FAIL2 = ("force", "pause")
+# Force is one-shot: the next accepted `add` uses it up. A flag nobody used up
+# (session ended first) stops counting after this many days, so it cannot stay
+# on for good.
+FORCE_TTL_DAYS = 1
 FORCE_BANNED = "自造"
 PAUSE_TEXT = (
     "wheel pause：{fp} 在 wheel 發動後連續失敗兩次，先停手，三選一：\n"
@@ -67,7 +71,7 @@ PAUSE_TEXT = (
 )
 FORCE_TEXT = (
     "wheel force mode ON（{source}：{reason}）：裁決只能是 不做／換題／設定／採用／改用／借鏡，"
-    "禁止自造；只用社群現成輪子或做法膠水收尾。解除：/wheel off"
+    "禁止自造；只用社群現成輪子或做法膠水收尾。只管下一筆裁決，登記後自動解除；提早解除：/wheel off"
 )
 
 USAGE = """wheel_registry -- 輪子卡登記簿（skills/wheel/SKILL.md 第 0 步與收尾登記）
@@ -76,7 +80,8 @@ USAGE = """wheel_registry -- 輪子卡登記簿（skills/wheel/SKILL.md 第 0 �
   add <verdict> <problem> <choice> <30|90|180>
                                       登記一筆，review_by = 今天 + 天數
   check                               逐列檢查欄數／日期／verdict；全對印 ok <列數> rows
-  force on <manual|auto> <reason>      開 force mode（§6.5）：裁決收窄為 不做／換題／設定／採用／改用／借鏡
+  force on <manual|auto> <reason>      開 force mode（§6.5）：下一筆裁決收窄為 不做／換題／設定／採用／改用／借鏡
+                                      登記那一筆後自動解除；沒用掉的隔 1 天失效
   force off                            解除 force mode
   force status                         印 on/off 與失敗兩次時的行為（force 或 pause）
   force mode <force|pause>             設定失敗兩次時：直接強制，或暫停給三個選項
@@ -230,6 +235,11 @@ def cmd_add(args):
     except OSError as e:
         sys.stderr.write("wheel_registry: 寫不進 %s：%s\n" % (path, e))
         return 1
+    if force_on():
+        data = load_force()
+        data["on"] = False
+        save_force(data)
+        print("wheel force mode 已用掉這一次，自動解除")
     return 0
 
 
@@ -293,8 +303,13 @@ def save_force(data):
     os.replace(tmp, path)
 
 
-def force_on():
-    return load_force().get("on") is True
+def force_on(data=None):
+    """On, and switched on recently enough. A `since` we cannot read is off, for
+    the same reason a broken file is."""
+    data = load_force() if data is None else data
+    since = parse_date(data.get("since") if isinstance(data.get("since"), str) else "")
+    return (data.get("on") is True and since is not None
+            and (today() - since).days <= FORCE_TTL_DAYS)
 
 
 def mode_of(data):
@@ -320,7 +335,7 @@ def cmd_force(args):
         print("wheel force mode OFF")
         return 0
     if sub == "status" and not rest:
-        if data.get("on") is True:
+        if force_on(data):
             print("on（%s：%s，since %s）on_fail2=%s" % (
                 data.get("source"), data.get("reason"), data.get("since"), mode_of(data)))
         else:
@@ -333,7 +348,7 @@ def cmd_force(args):
         return 0
     if sub == "trip" and rest:
         fp = " ".join(rest)
-        if data.get("on") is True:
+        if force_on(data):
             print(FORCE_TEXT.format(source=data.get("source"), reason=data.get("reason")))
             return 0
         if mode_of(data) == "pause":
