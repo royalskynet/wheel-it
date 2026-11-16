@@ -36,7 +36,7 @@ Use wheel to repair a bug: search the community for the same problem and for rea
 
 - **Restate** — "what if we did nothing?" can end at `不做`; a different real problem ends at `換題`.
 - **Depth** — Quick / Standard / Full / Full+reverse; not everything runs every time.
-- **Three lanes + a closed-source lane** — gh issues, HN, Stack Overflow for community consensus; `gh search repos` / npm / pip / brew for wheels; deps.dev + download counts to pick the leader; read-only commands for the closed-source lane.
+- **Three lanes + a closed-source lane** — `wheel_community.py` searches GitHub issues / PRs / Discussions, HN, Stack Overflow and Reddit in one run for community consensus and leaves a receipt that registering a card requires; `gh search repos` / npm / pip / brew for wheels; deps.dev + download counts to pick the leader; read-only commands for the closed-source lane.
 - **Scoring** — activity, license, cost, reversibility, adoption, recurring complaints; stars sort candidates, they do not score them.
 - **7-level verdict** — 不做 / 換題 / 設定 / 採用 / 改用 / 借鏡 / 自造; building is the last rung.
 - **Asymmetric gate** — a second opinion only for `自造` or a warned adoption.

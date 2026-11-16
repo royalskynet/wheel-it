@@ -51,6 +51,20 @@ DAY_CHOICES = ("30", "90", "180")
 DATE_RE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
 DEFAULT_PATH = os.path.expanduser("~/.wheel/registry.tsv")
 DEFAULT_FORCE_PATH = os.path.expanduser("~/.wheel/force.json")
+DEFAULT_LEDGER_PATH = os.path.expanduser("~/.wheel/ledger.jsonl")
+# SKILL.md §3 社群軸. The registry's five columns record what was decided, not
+# whether anyone looked: a card could claim 社群共識 with no query sent. So `add`
+# asks the ledger that `wheel_community.py` writes. A receipt is good for this
+# long -- one wheel run, not a standing licence -- and backs one card: the `add`
+# that uses it records its timestamp, and a used receipt opens nothing further.
+RECEIPT_MAX_AGE_MIN = 120
+# A source that answered, with or without hits. `rate-limited` and the like are
+# not answers and do not count toward "two sources".
+ANSWERED = ("ok", "no-results")
+MIN_ANSWERED = 2
+# Verdicts reachable at SKILL.md §1, before any search: nothing to prove.
+NO_SEARCH_VERDICTS = ("不做", "換題")
+QUICK_FLAG = "--quick"
 # SKILL.md §6.5: 自造的實作連續失敗兩次（Genie fail_streak 的既有計數器已經在
 # context 跳出警告）才會走到這裡 -- force mode 不重算失敗次數，只記「要不要收窄
 # 裁決」這一個新狀態，計數本身永遠留在 fail_streak.py，這裡不重造。
@@ -77,8 +91,11 @@ FORCE_TEXT = (
 USAGE = """wheel_registry -- 輪子卡登記簿（skills/wheel/SKILL.md 第 0 步與收尾登記）
   find <kw> [kw...]                    找舊卡（不分大小寫、字面比對），最多印最後 5 筆
                                       每筆前綴 [有效] 或 [過期]；沒有命中印「無舊卡」
-  add <verdict> <problem> <choice> <30|90|180>
+  add [--quick] <verdict> <problem> <choice> <30|90|180>
                                       登記一筆，review_by = 今天 + 天數
+                                      要有 120 分鐘內的社群收據（先跑 wheel_community.py），一張收據只放行一張卡；
+                                      Quick 深度加 --quick 豁免；裁決只有 不做／換題 也豁免
+  audit                               統計登記時的查證狀況（searched／degraded／quick／no-search）
   check                               逐列檢查欄數／日期／verdict；全對印 ok <列數> rows
   force on <manual|auto> <reason>      開 force mode（§6.5）：下一筆裁決收窄為 不做／換題／設定／採用／改用／借鏡
                                       登記那一筆後自動解除；沒用掉的隔 1 天失效
@@ -90,6 +107,7 @@ verdict: %s
         多個用全形 ｜ 串接，例如 設定｜不做
 檔案: %s（環境變數 WHEEL_REGISTRY 可改）
 force 檔: %s（環境變數 WHEEL_FORCE 可改）
+收據檔: %s（環境變數 WHEEL_LEDGER 可改）
 """
 
 
@@ -107,8 +125,81 @@ def force_path():
     return os.environ.get("WHEEL_FORCE") or DEFAULT_FORCE_PATH
 
 
+def ledger_path():
+    """`$WHEEL_LEDGER`, else `~/.wheel/ledger.jsonl`. Same empty-means-unset rule."""
+    return os.environ.get("WHEEL_LEDGER") or DEFAULT_LEDGER_PATH
+
+
 def today():
     return datetime.date.today()
+
+
+def read_ledger():
+    """-> [dict], file order. A missing file or an unreadable line is skipped: the
+    ledger is evidence, and a torn line is absent evidence, not a crash."""
+    out = []
+    try:
+        with open(ledger_path(), encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict):
+                    out.append(entry)
+    except OSError:
+        pass
+    return out
+
+
+def fresh_receipt():
+    """The newest community-search receipt, if it is recent enough to belong to
+    this run and no earlier card has used it. -> dict or None."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ledger = read_ledger()
+    used = {e.get("receipt") for e in ledger if e.get("kind") == "add"}
+    for entry in reversed(ledger):
+        if entry.get("kind") != "search":
+            continue
+        if entry.get("ts") in used:
+            return None
+        try:
+            ts = datetime.datetime.fromisoformat(str(entry.get("ts")))
+        except ValueError:
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        age = (now - ts).total_seconds() / 60
+        return entry if 0 <= age <= RECEIPT_MAX_AGE_MIN else None
+    return None
+
+
+def receipt_summary(entry):
+    sources = entry.get("sources") if isinstance(entry.get("sources"), dict) else {}
+    parts, answered = [], 0
+    for name, info in sources.items():
+        outcome = info.get("outcome") if isinstance(info, dict) else "?"
+        answered += outcome in ANSWERED
+        parts.append("%s %s" % (name, outcome))
+    return answered, "｜".join(parts)
+
+
+def log_add(mode, verdict, problem, detail="", receipt=None):
+    """Record how this card was backed. Best effort: a ledger that cannot be
+    written must not undo a card that was."""
+    try:
+        path = ledger_path()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "a", encoding="utf-8", newline="") as fh:
+            fh.write(json.dumps({
+                "kind": "add", "mode": mode, "verdict": verdict, "problem": problem,
+                "detail": detail,
+                "receipt": (receipt or {}).get("ts"),
+                "queries": (receipt or {}).get("queries"),
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            }, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 
 def parse_date(text):
@@ -205,8 +296,11 @@ def cmd_find(keywords):
 
 
 def cmd_add(args):
+    quick = bool(args) and args[0] == QUICK_FLAG
+    if quick:
+        args = args[1:]
     if len(args) != 4:
-        return usage("add 需要 4 個引數：<verdict> <problem> <choice> <30|90|180>")
+        return usage("add 需要 4 個引數：[--quick] <verdict> <problem> <choice> <30|90|180>")
     verdict, problem, choice, days = args
     bad = []
     if not verdict_ok(verdict):
@@ -223,6 +317,24 @@ def cmd_add(args):
     for name, value in (("verdict", verdict), ("problem", problem), ("choice", choice)):
         if "\t" in value or "\n" in value or "\r" in value:
             bad.append("%s 欄位含 TAB 或換行，會把後面的欄位推歪" % name)
+    # Community gate, last so a malformed card is reported for what is wrong with
+    # it rather than for a missing receipt.
+    mode, detail, receipt = "searched", "", None
+    if not bad:
+        if all(part in NO_SEARCH_VERDICTS for part in verdict.split(VERDICT_SEP)):
+            mode = "no-search"
+        elif quick:
+            mode = "quick"
+        else:
+            receipt = fresh_receipt()
+            if receipt is None:
+                bad.append("沒有 %d 分鐘內、還沒被別張卡用掉的社群收據。先跑 wheel_community.py \"<錯誤原文或問題>\" "
+                           "\"<通用說法>\" \"<英文說法>\" 再登記；Quick 深度（易回退小腳本、"
+                           "版本號，且不是除錯題）改用 add %s" % (RECEIPT_MAX_AGE_MIN, QUICK_FLAG))
+            else:
+                answered, detail = receipt_summary(receipt)
+                if answered < MIN_ANSWERED:
+                    mode = "degraded"
     if bad:
         for line in bad:
             sys.stderr.write("wheel_registry: %s\n" % line)
@@ -235,11 +347,34 @@ def cmd_add(args):
     except OSError as e:
         sys.stderr.write("wheel_registry: 寫不進 %s：%s\n" % (path, e))
         return 1
+    log_add(mode, verdict, problem, detail, receipt)
+    if mode == "searched":
+        print("社群收據：%s" % detail)
+    elif mode == "degraded":
+        print("社群軸降級（有回應的來源不到 %d 個）：%s -- 卡片「降級：」照這行寫，"
+              "不寫成社群共識" % (MIN_ANSWERED, detail or "無來源"))
     if force_on():
         data = load_force()
         data["on"] = False
         save_force(data)
         print("wheel force mode 已用掉這一次，自動解除")
+    return 0
+
+
+def cmd_audit(args):
+    """How past cards were backed, so "did the community axis run" is a count
+    and not a transcript dig."""
+    if args:
+        return usage("audit 不接受引數")
+    adds = [e for e in read_ledger() if e.get("kind") == "add"]
+    tally = {}
+    for e in adds:
+        tally[e.get("mode")] = tally.get(e.get("mode"), 0) + 1
+    print("登記 %d 筆：%s" % (len(adds), "｜".join(
+        "%s %d" % (m, tally.get(m, 0)) for m in ("searched", "degraded", "quick", "no-search"))))
+    for e in adds[-5:]:
+        print("%s\t%s\t%s\t%s" % (str(e.get("ts"))[:10], e.get("mode"), e.get("verdict"),
+                                  e.get("problem")))
     return 0
 
 
@@ -361,16 +496,23 @@ def cmd_force(args):
 def usage(message=None):
     if message:
         sys.stderr.write("wheel_registry: %s\n" % message)
-    sys.stderr.write(USAGE % (" / ".join(VERDICTS), registry_path(), force_path()))
+    sys.stderr.write(USAGE % (" / ".join(VERDICTS), registry_path(), force_path(), ledger_path()))
     return 2
 
 
 def main(argv):
+    # Cards are Chinese; a console code page (cp950 on Windows) turns `[有效]`
+    # into bytes the reader cannot use.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
     args = list(argv[1:])
     if not args:
         return usage()
     if args[0] in ("-h", "--help", "help"):
-        sys.stdout.write(USAGE % (" / ".join(VERDICTS), registry_path(), force_path()))
+        sys.stdout.write(USAGE % (" / ".join(VERDICTS), registry_path(), force_path(), ledger_path()))
         return 0
     cmd, rest = args[0], args[1:]
     try:
@@ -380,6 +522,8 @@ def main(argv):
             return cmd_add(rest)
         if cmd == "check":
             return cmd_check(rest)
+        if cmd == "audit":
+            return cmd_audit(rest)
         if cmd == "force":
             return cmd_force(rest)
     except OSError as e:

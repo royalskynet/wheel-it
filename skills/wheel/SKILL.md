@@ -12,7 +12,7 @@ description: 找最好解法：動手前查三軸 prior-art（官方文檔／社
 
 ## 0. 先查之前的決定
 
-引數是 `f`／`force`／`off`／`pause` → 只跑 §6.5 對應那行，不查三軸，回一句狀態就停。引數以 `fix` 開頭 → 症狀照 [references/fix.md](references/fix.md) 跑（仍先做下面的 `force status`）。其餘先跑 `force status`，`on` 就整輪照 §6.5。
+引數是 `f`／`force`／`off`／`pause` → 只跑 §6.5 對應那行，不查三軸，回一句狀態就停。引數以 `fix` 開頭，或題目本身是錯誤訊息／故障症狀 → 照 [references/fix.md](references/fix.md) 跑（仍先做下面的 `force status`）。其餘先跑 `force status`，`on` 就整輪照 §6.5。
 
 ```bash
 python3 <本 skill 目錄>/scripts/wheel_registry.py find "<關鍵字1>" "<關鍵字2>" "<英文說法>"
@@ -31,8 +31,8 @@ python3 <本 skill 目錄>/scripts/wheel_registry.py find "<關鍵字1>" "<關�
 
 | 深度 | 何時 | 要跑 |
 |---|---|---|
-| Quick | 易回退的小腳本、版本號 | 本機＋輪子軸，≤3 次查詢 |
-| Standard | 模組、新依賴、選型 | 三軸；社群至少兩種來源（gh issues＋一個討論區）；輪子要有採用量 |
+| Quick | 易回退的小腳本、版本號（除錯題不算 Quick） | 本機＋輪子軸，≤3 次查詢；登記用 `add --quick` |
+| Standard | 模組、新依賴、選型 | 三軸；社群軸跑 `wheel_community.py`，至少兩個來源有回應；輪子要有採用量 |
 | Full | 子系統、難回退 | 三軸＋讀首選原始碼＋查維護者 |
 | Full＋逆向 | 目標是閉源產物 | Full＋§3.5 |
 
@@ -40,8 +40,7 @@ python3 <本 skill 目錄>/scripts/wheel_registry.py find "<關鍵字1>" "<關�
 
 - **本機**：`which`／`--help`／已裝依賴／原生設定能否直接解。
 - **官方**：文件 MCP（context7）、官方文件、release notes（版本號以 release 頁為準）；降級 `site:<官方域>` 網搜。
-- **社群**：`gh search issues "<問題或錯誤原文>" --limit 10`（不限 closed，根因常在 open）＋`gh search prs` 找未合修補。讀留言（根因與 workaround 多在留言）；`stale`／bot 關的 ≠ 維護者決定不修。
-  HN `curl -s "https://hn.algolia.com/api/v1/search?query=<q>&tags=story"`；SO `curl -s --compressed "https://api.stackexchange.com/2.3/search/advanced?q=<q>&site=stackoverflow&sort=votes"`；Reddit 走網搜 `site:reddit.com` 或抓取工具。
+- **社群**：`python3 <本 skill 目錄>/scripts/wheel_community.py "<問題或錯誤原文>" "<通用說法>" "<英文說法>"`，一次查 GitHub issues／PRs／Discussions、HN、Stack Overflow、Reddit 並留收據；沒有收據 `add` 不放行。各來源印狀態：`ok`／`no-results` 是有回應，其餘（限流、被擋、連不上、略過）是沒回應，寫進「降級：」，不寫成「沒人提」。讀留言再下結論；幾組說法要換視角；對首選另查一次反證；首選的文件說它建在誰上面就追一層。讀法、停止條件、中文社群與 Reddit 被擋時的補法 → [references/community.md](references/community.md)。
 - **輪子**：`gh search repos "<q>" --sort stars --limit 10`、`gh search code "<API>"`、`npm view`／`pip index versions`／`brew search`。
 - **採用量**：`curl -s "https://api.deps.dev/v3/projects/github.com%2F<owner>%2F<repo>"`（stars／授權／OpenSSF）；`https://api.npmjs.org/downloads/point/last-month/<pkg>`、`https://pypistats.org/api/packages/<pkg>/recent`；非套件看 release 下載數或 `brew info`；都沒有寫「採用量不明」。
 
@@ -99,7 +98,8 @@ force 開著時，自造候選全淘汰，淘汰理由寫「force mode」。三�
 深度：Quick|Standard|Full|Full＋逆向　降級：<缺的 lane 或 無>
 術語：<專業詞｜理論或論文＋URL｜跨域對應；Quick 可省>
 候選：<A ★n 下載/月 活躍/授權> ｜ <B …> ｜ 淘汰：<C：原因>
-官方：<URL 或 無>　社群共識：<一句＋URL（Standard 起兩個來源）>
+官方：<URL 或 無>　社群共識：<一句＋URL（Standard 起兩個來源）；反證：<一句＋URL 或 查無>>
+收據：<wheel_community.py 印的收據行照抄；Quick 寫「Quick 免」>
 社群計票：…（有做才寫）
 警示：<無 或 授權/活躍/難回退…>
 強制：<force on（來源）——沒開就省略這行>
@@ -112,6 +112,7 @@ force 開著時，自造候選全淘汰，淘汰理由寫「force mode」。三�
 ```bash
 python3 <本 skill 目錄>/scripts/wheel_registry.py add "<裁決>" "<問題一句>" "<首選>" <30|90|180>
 ```
+`add` 要有 120 分鐘內的社群收據（一張收據放行一張卡），沒有回 exit 2：補跑社群軸，不改用 `--quick` 繞過。豁免只有兩種：Quick 深度用 `add --quick …`，裁決只有 不做／換題。`audit` 子指令統計歷來登記的查證狀況。
 裁決只用 §5 的 7 詞，混合用全形 `｜` 串接（`設定｜借鏡`），警示寫進首選欄。`check` 子指令檢查整本登記簿。
 
 腳本不在時（第五欄自填今天＋30／90／180 天）：

@@ -13,6 +13,7 @@ real `~/.wheel`.
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,8 +46,10 @@ def shell(script, env_extra, cwd):
     env.pop("WHEEL_REGISTRY", None)
     env.pop("PYTHONPATH", None)
     env.update(env_extra)
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                          env=env, cwd=cwd)
+    # Resolve bash through PATH ourselves: on Windows a bare "bash" handed to
+    # CreateProcess finds System32's WSL launcher first, which ignores this HOME.
+    return subprocess.run([shutil.which("bash") or "bash", "-c", script], capture_output=True,
+                          text=True, encoding="utf-8", env=env, cwd=cwd)
 
 
 def fallback_block():

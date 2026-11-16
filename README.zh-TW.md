@@ -36,7 +36,7 @@ npx skills add https://github.com/royalskynet/wheel-it --skill wheel
 
 - **重述問題**：先問「不做會怎樣」，能刪就裁決成 `不做`；真問題是別的 → `換題`。
 - **定深度**：Quick／Standard／Full／Full＋逆向，不是每次都全跑。
-- **三軸＋閉源軸**：gh issues、HN、Stack Overflow 做社群共識；`gh search repos`／npm／pip／brew 找輪子；deps.dev＋下載量判龍頭；閉源軸用只讀工具。
+- **三軸＋閉源軸**：`wheel_community.py` 一次查 GitHub issues／PRs／Discussions、HN、Stack Overflow、Reddit 做社群共識並留收據，沒收據登記不放行；`gh search repos`／npm／pip／brew 找輪子；deps.dev＋下載量判龍頭；閉源軸用只讀工具。
 - **評分**：活躍度、授權、成本、可逆性、採用量、社群抱怨；stars 只排序不計分。
 - **7 級裁決**：不做／換題／設定／採用／改用／借鏡／自造，自造是最後一格。
 - **不對稱閘**：自造或帶警示才要第二意見。

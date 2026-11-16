@@ -62,9 +62,37 @@ def run(*args, **kw):
     env["WHEEL_FORCE"] = kw.get("force") or os.path.join(tempfile.gettempdir(), "wheel-test-no-force.json")
     if kw.get("home") is not None:
         env["HOME"] = kw["home"]
+        # Windows resolves `~` from USERPROFILE, not HOME. Without this the
+        # default-path case writes its test row into the user's real registry.
+        env["USERPROFILE"] = kw["home"]
+    # The community gate reads a ledger. Cases that are not about the gate get one
+    # holding a fresh receipt, so they keep testing what they were written for.
+    env["WHEEL_LEDGER"] = kw.get("ledger") or fresh_ledger()
     return subprocess.run([sys.executable, CLI] + [str(a) for a in args],
-                          capture_output=True, text=True, env=env,
+                          capture_output=True, text=True, encoding="utf-8", env=env,
                           cwd=tempfile.gettempdir())
+
+
+def receipt(minutes_ago=0, **outcomes):
+    """One ledger line as wheel_community.py writes it."""
+    ts = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=minutes_ago)
+    outcomes = outcomes or {"gh_issues": "ok", "hn": "no-results", "reddit": "rate-limited"}
+    return json.dumps({"kind": "search", "ts": ts.isoformat(timespec="seconds"),
+                       "queries": ["q"], "sources": {
+                           k: {"outcome": v, "n": 1 if v == "ok" else 0}
+                           for k, v in outcomes.items()}})
+
+
+_FRESH = []
+
+
+def fresh_ledger():
+    if not _FRESH:
+        fd, path = tempfile.mkstemp(prefix="wheel-test-ledger-", suffix=".jsonl")
+        os.close(fd)
+        _FRESH.append(path)
+    write_rows(_FRESH[0], [receipt()])
+    return _FRESH[0]
 
 
 def registry(tmp, *parts):
@@ -451,6 +479,54 @@ def test_force_refuses_bad_args_and_survives_a_broken_file(fails):
            "broken force.json does not lock out 自造", fails)
 
 
+# --- community gate: a card needs a receipt, or says why it has none -----------
+def test_add_needs_a_fresh_community_receipt(fails):
+    with tempfile.TemporaryDirectory() as tmp:
+        reg, led = registry(tmp, "r.tsv"), registry(tmp, "ledger.jsonl")
+        p = run("add", "採用", "q", "pick", 90, registry=reg, ledger=led)
+        eq(p.returncode, 2, "add without any receipt is refused", fails)
+        ok("wheel_community.py" in p.stderr, "the refusal names the command to run", fails)
+        eq(rows_of(reg), [], "a refused add writes no row", fails)
+        write_rows(led, [receipt(minutes_ago=600)])
+        eq(run("add", "採用", "q", "pick", 90, registry=reg, ledger=led).returncode, 2,
+           "a receipt older than the window is refused", fails)
+        write_rows(led, ["not json", receipt(minutes_ago=5)])
+        p = run("add", "採用", "q", "pick", 90, registry=reg, ledger=led)
+        ok(p.returncode == 0 and "社群收據：" in p.stdout and "reddit rate-limited" in p.stdout,
+           "a fresh receipt passes and its outcomes are echoed", fails)
+        eq(len(rows_of(reg)), 1, "the accepted add wrote one row", fails)
+        eq(run("add", "改用", "another question", "pick", 90, registry=reg, ledger=led).returncode, 2,
+           "a receipt already used by one card does not open a second", fails)
+        with open(led, "a", encoding="utf-8") as fh:
+            fh.write(receipt(minutes_ago=0) + "\n")
+        eq(run("add", "改用", "another question", "pick", 90, registry=reg, ledger=led).returncode, 0,
+           "a new search opens the next card", fails)
+
+
+def test_add_gate_exemptions_and_degraded(fails):
+    with tempfile.TemporaryDirectory() as tmp:
+        reg, led = registry(tmp, "r.tsv"), registry(tmp, "ledger.jsonl")
+        eq(run("add", "--quick", "設定", "q", "pick", 30, registry=reg, ledger=led).returncode, 0,
+           "--quick is exempt", fails)
+        for v in ("不做", "換題", "不做｜換題"):
+            eq(run("add", v, "q", "none", 30, registry=reg, ledger=led).returncode, 0,
+               "%s ends before any search and is exempt" % v, fails)
+        eq(run("add", "不做｜自造", "q", "x", 30, registry=reg, ledger=led).returncode, 2,
+           "a mixed verdict with a searched part is not exempt", fails)
+        eq(run("add", "--quick", "胡說", "q", "x", 30, registry=reg, ledger=led).returncode, 2,
+           "--quick does not excuse a bad verdict", fails)
+        with open(led, "a", encoding="utf-8") as fh:
+            fh.write(receipt(gh_issues="ok", hn="unreachable", reddit="blocked") + "\n")
+        p = run("add", "採用", "q", "pick", 90, registry=reg, ledger=led)
+        ok(p.returncode == 0 and "社群軸降級" in p.stdout,
+           "one answering source passes but is called degraded", fails)
+        p = run("audit", ledger=led)
+        ok(p.returncode == 0 and "quick 1" in p.stdout and "no-search 3" in p.stdout
+           and "degraded 1" in p.stdout and "searched 0" in p.stdout,
+           "audit counts how each card was backed", fails)
+        eq(run("check", registry=reg).returncode, 0, "gated rows still pass check", fails)
+
+
 def main():
     fails = []
     for fn in (test_add_writes_one_row,
@@ -475,7 +551,9 @@ def main():
                test_force_trip_defaults_to_force_and_bans_self_build,
                test_force_left_on_expires,
                test_force_pause_mode_offers_three_ways_out,
-               test_force_refuses_bad_args_and_survives_a_broken_file):
+               test_force_refuses_bad_args_and_survives_a_broken_file,
+               test_add_needs_a_fresh_community_receipt,
+               test_add_gate_exemptions_and_degraded):
         try:
             fn(fails)
         except Exception as e:
@@ -491,8 +569,9 @@ def main():
           "case-insensitive + last-5 + live/expired + 無舊卡, check reports every "
           "violation by line and passes a clean file, default path honours "
           "WHEEL_REGISTRY then HOME, exit codes 0/1/2 stay distinct, force mode "
-          "bans 自造 / pause offers 3 ways out / broken flag fails open"
-          % (len(CHECKS), 22, len(BAD_VERDICTS), len(BAD_DAYS)))
+          "bans 自造 / pause offers 3 ways out / broken flag fails open, add needs a "
+          "fresh community receipt (quick / 不做 / 換題 exempt, one source = degraded)"
+          % (len(CHECKS), 24, len(BAD_VERDICTS), len(BAD_DAYS)))
 
 
 if __name__ == "__main__":
