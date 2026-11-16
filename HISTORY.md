@@ -68,3 +68,13 @@ Layer 2 找輪子與查證抽成獨立 `skills/wheel/`（三軸＋深度分級�
 
 本機收斂：`~/.claude/skills/wheel` 維持指向 `~/.agents/skills/wheel`（genie-harness 安裝的 symlink），`~/.agents/skills/wheel` 改為直接指向本 repo；舊的三份 `coding-hermes` 副本（`~/.agents`、`~/.codex`、`Ether-claude`）刪除，統一指向 `~/dev/ether-code`。
 
+
+## 2026-11-16 社群軸改由腳本執行並留收據
+
+稽核本機 session 記錄：用過 wheel 的 9 個 session 有 6 個沒送出任何社群查詢，其中 5 個照樣登記了輪子卡。「Standard 起至少兩個來源」只寫在文字裡，登記端不驗。
+
+1. **`scripts/wheel_community.py`。** 一次並行查 GitHub issues／PRs／Discussions、Hacker News、Stack Overflow、Reddit，每個來源回報狀態，「有回應」（`ok`／`no-results`）與「沒回應」（限流、被擋、連不上、略過）分開。查詢送出前去掉家目錄、登入名、信箱、長 hex。每次執行在 `~/.wheel/ledger.jsonl` 留一筆收據。
+2. **登記閘。** `wheel_registry.py add` 要有 120 分鐘內、未被別張卡用過的收據，否則 exit 2；Quick 用 `add --quick`，裁決只有 不做／換題 免查。新增 `audit` 子指令統計歷來登記的查證狀況。
+3. **除錯題自動走 fix。** 題目本身是錯誤訊息或故障症狀就照 `references/fix.md` 跑，不必明打 `/wheel fix`。
+4. **`references/community.md`。** 狀態讀法、換視角、追一層、查反證、停止條件。做法借鏡 mvanhorn/last30days-skill、affaan-m/ECC search-first、Emanuelel/dont-reinvent、iagochavarry/who-built-this-before-me、rianczerwinski/prior-art-skill。
+5. **Windows。** CLI 輸出固定 UTF-8；測試把 `USERPROFILE` 一併導向暫存目錄（原本會寫進真實登記簿）、bash 由 PATH 解析（原本會跑到 WSL）、補 `LANG`（Git Bash 的 `grep -i` 在沒有 locale 時會 abort）。

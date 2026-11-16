@@ -46,6 +46,9 @@ def shell(script, env_extra, cwd):
     env.pop("WHEEL_REGISTRY", None)
     env.pop("PYTHONPATH", None)
     env.update(env_extra)
+    # Git Bash's grep aborts on `-i` when no locale is set, which is the case for a
+    # non-login bash started from Python on Windows. A user's own shell has one.
+    env.setdefault("LANG", "C.UTF-8")
     # Resolve bash through PATH ourselves: on Windows a bare "bash" handed to
     # CreateProcess finds System32's WSL launcher first, which ignores this HOME.
     return subprocess.run([shutil.which("bash") or "bash", "-c", script], capture_output=True,
