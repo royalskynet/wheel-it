@@ -68,7 +68,8 @@ def fallback_block():
     return block
 
 
-def test_frontmatter(text):
+def test_frontmatter(text=None):
+    text = body() if text is None else text
     head = text.split("---")[1] if text.startswith("---") else ""
     check("name: wheel" in head, "frontmatter names the skill wheel")
     desc = re.search(r"description:\s*(.+)", head)
@@ -76,13 +77,15 @@ def test_frontmatter(text):
           "frontmatter description is long enough to route on")
 
 
-def test_three_sections(text):
+def test_three_sections(text=None):
+    text = body() if text is None else text
     """/wheel does three jobs by default-or-context; each must be spelled out."""
     for needle in ("**決策**", "**輪子**", "**逆向**", "§3.5"):
         check(needle in text, "the three jobs table names %s" % needle)
 
 
-def test_reverse_is_conditional(text):
+def test_reverse_is_conditional(text=None):
+    text = body() if text is None else text
     m = re.search(r"### 3\.5[^\n]*\n(.*?)\n## 4\.", text, re.S)
     check(bool(m), "§3.5 has a body ending at §4")
     if not m:
@@ -98,14 +101,16 @@ def test_reverse_is_conditional(text):
     check("Full＋逆向" in text, "the depth table has the reverse row")
 
 
-def test_verdicts_line_up(text):
+def test_verdicts_line_up(text=None):
+    text = body() if text is None else text
     for verdict in wheel_registry.VERDICTS:
         check(verdict in text, "skill spells verdict %s" % verdict)
     check(wheel_registry.VERDICT_SEP in text,
           "skill uses the full-width ｜ separator")
 
 
-def test_literal_paths_resolve(text):
+def test_literal_paths_resolve(text=None):
+    text = body() if text is None else text
     """The prose's `<本 skill 目錄>/../../router/...` is one layout; the shipped
     script is another. Only the shipped one can be checked here, but the prose
     must describe it so an installed copy is not told to look for nothing."""
@@ -118,7 +123,8 @@ def test_literal_paths_resolve(text):
     check(os.path.isfile(CLI), "shipped registry CLI exists next to this test")
 
 
-def test_fallback_commands_run(text):
+def test_fallback_commands_run(text=None):
+    text = body() if text is None else text
     """Both fallbacks must work on the shell they are pasted into."""
     with tempfile.TemporaryDirectory() as tmp:
         reg = os.path.join(tmp, ".wheel", "registry.tsv")
@@ -161,7 +167,8 @@ def test_fallback_commands_run(text):
               "CLI find reads the fallback's rows")
 
 
-def test_no_stale_host_names(text):
+def test_no_stale_host_names(text=None):
+    text = body() if text is None else text
     """This repo is host-neutral; a leftover host name routes to a skill that is
     not installed."""
     for name in ("genie-harness", "~/.hermes", "coding-hermes"):
