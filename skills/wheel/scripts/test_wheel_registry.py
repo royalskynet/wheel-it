@@ -26,6 +26,11 @@ import subprocess
 import sys
 import tempfile
 
+# These test_* functions are the aggregating harness run by main(): failed checks
+# are collected instead of raised. pytest must use test_wheel_harness.py, which
+# runs this file as a subprocess and honors that runner's exit code.
+__test__ = False
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLI = os.path.join(HERE, "wheel_registry.py")
 
@@ -117,8 +122,7 @@ def today(offset=0):
 
 
 # --- add: one well-formed row per call --------------------------------------
-def test_add_writes_one_row(fails=None):
-    fails = [] if fails is None else fails
+def test_add_writes_one_row(fails):
     with tempfile.TemporaryDirectory() as tmp:
         # Nested on purpose: the directory usually does not exist when step 0 has
         # already run, so `add` is the thing that has to create it.
@@ -138,8 +142,7 @@ def test_add_writes_one_row(fails=None):
            "a row this CLI wrote passes check", fails)
 
 
-def test_add_accepts_every_verdict_and_separator(fails=None):
-    fails = [] if fails is None else fails
+def test_add_accepts_every_verdict_and_separator(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         for v in GOOD_VERDICTS:
@@ -151,8 +154,7 @@ def test_add_accepts_every_verdict_and_separator(fails=None):
            "all seven verdicts and the ｜-joined forms pass check", fails)
 
 
-def test_add_honours_the_three_review_windows(fails=None):
-    fails = [] if fails is None else fails
+def test_add_honours_the_three_review_windows(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         for d in (30, 90, 180):
@@ -193,8 +195,7 @@ BAD_FIELDS = [
 ]
 
 
-def test_add_refuses_bad_verdicts(fails=None):
-    fails = [] if fails is None else fails
+def test_add_refuses_bad_verdicts(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         write_rows(path, [today() + "\t借鏡\tq\tp\t" + today(30)])
@@ -206,8 +207,7 @@ def test_add_refuses_bad_verdicts(fails=None):
         eq(rows_of(path), before, "no refused verdict touched the file", fails)
 
 
-def test_add_refuses_bad_days(fails=None):
-    fails = [] if fails is None else fails
+def test_add_refuses_bad_days(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         before = rows_of(path)
@@ -218,8 +218,7 @@ def test_add_refuses_bad_days(fails=None):
         eq(rows_of(path), before, "no refused day count touched the file", fails)
 
 
-def test_add_refuses_embedded_tabs_and_newlines(fails=None):
-    fails = [] if fails is None else fails
+def test_add_refuses_embedded_tabs_and_newlines(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         before = rows_of(path)
@@ -230,8 +229,7 @@ def test_add_refuses_embedded_tabs_and_newlines(fails=None):
         eq(rows_of(path), [], "the file still does not exist", fails)
 
 
-def test_add_refuses_wrong_arg_counts(fails=None):
-    fails = [] if fails is None else fails
+def test_add_refuses_wrong_arg_counts(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         for args in ([], ["借鏡"], ["借鏡", "q", "p"], ["借鏡", "q", "p", "30", "extra"]):
@@ -241,8 +239,7 @@ def test_add_refuses_wrong_arg_counts(fails=None):
 
 
 # --- find: the step-0 lookup --------------------------------------------------
-def test_find_is_case_insensitive_and_literal(fails=None):
-    fails = [] if fails is None else fails
+def test_find_is_case_insensitive_and_literal(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         run("add", "借鏡", "q one", "pick", 30, registry=path)
@@ -259,8 +256,7 @@ def test_find_is_case_insensitive_and_literal(fails=None):
            "find matches the keyword literally, ignoring case", fails)
 
 
-def test_find_matches_any_column(fails=None):
-    fails = [] if fails is None else fails
+def test_find_matches_any_column(fails):
     """The old command was `grep -iF` over the whole line, so every column counts:
     the card you are about to re-make is often named by its choice, not its question."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -271,8 +267,7 @@ def test_find_matches_any_column(fails=None):
                "keyword %r hits the row" % kw, fails)
 
 
-def test_find_keeps_only_the_last_five(fails=None):
-    fails = [] if fails is None else fails
+def test_find_keeps_only_the_last_five(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         for i in range(7):
@@ -286,8 +281,7 @@ def test_find_keeps_only_the_last_five(fails=None):
            "the last five, oldest first", fails)
 
 
-def test_find_marks_expiry_against_today(fails=None):
-    fails = [] if fails is None else fails
+def test_find_marks_expiry_against_today(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         write_rows(path, [
@@ -312,8 +306,7 @@ def test_find_marks_expiry_against_today(fails=None):
         eq(got["short row"], "[過期]", "a row with too few columns counts as expired", fails)
 
 
-def test_find_without_a_hit_is_not_a_failure(fails=None):
-    fails = [] if fails is None else fails
+def test_find_without_a_hit_is_not_a_failure(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         p = run("find", "zzz-none", registry=path)
@@ -325,8 +318,7 @@ def test_find_without_a_hit_is_not_a_failure(fails=None):
         eq(run("find", registry=path).returncode, 2, "find with no keyword is a usage error", fails)
 
 
-def test_find_on_a_registry_that_does_not_exist_yet(fails=None):
-    fails = [] if fails is None else fails
+def test_find_on_a_registry_that_does_not_exist_yet(fails):
     """Step 0 runs before the first add, so this is the normal first answer."""
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "never-written.tsv")
@@ -336,8 +328,7 @@ def test_find_on_a_registry_that_does_not_exist_yet(fails=None):
 
 
 # --- check: report the broken rows, never rewrite them ------------------------
-def test_check_passes_a_clean_file(fails=None):
-    fails = [] if fails is None else fails
+def test_check_passes_a_clean_file(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         for v in GOOD_VERDICTS[:3]:
@@ -349,8 +340,7 @@ def test_check_passes_a_clean_file(fails=None):
            "a blank line is formatting, not a broken row", fails)
 
 
-def test_check_reports_every_violation_by_line_number(fails=None):
-    fails = [] if fails is None else fails
+def test_check_reports_every_violation_by_line_number(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         write_rows(path, [
@@ -378,8 +368,7 @@ def test_check_reports_every_violation_by_line_number(fails=None):
         eq(len(rows_of(path)), 8, "check never rewrites the file", fails)
 
 
-def test_check_empty_and_missing(fails=None):
-    fails = [] if fails is None else fails
+def test_check_empty_and_missing(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         p = run("check", registry=path)
@@ -391,8 +380,7 @@ def test_check_empty_and_missing(fails=None):
 
 
 # --- where the file lives ------------------------------------------------------
-def test_default_path_uses_home_not_a_real_registry(fails=None):
-    fails = [] if fails is None else fails
+def test_default_path_uses_home_not_a_real_registry(fails):
     """`$WHEEL_REGISTRY` unset falls back to `~/.wheel/registry.tsv`. HOME is
     pointed at a tempdir here, so this proves the fallback without ever reading
     or writing the user's own registry."""
@@ -410,8 +398,7 @@ def test_default_path_uses_home_not_a_real_registry(fails=None):
             eq(len(rows_of(path)), 1, "WHEEL_REGISTRY overrides the default path", fails)
 
 
-def test_unknown_subcommand_is_a_usage_error(fails=None):
-    fails = [] if fails is None else fails
+def test_unknown_subcommand_is_a_usage_error(fails):
     with tempfile.TemporaryDirectory() as tmp:
         path = registry(tmp, "registry.tsv")
         for args in (["nope"], ["findx", "q"], ["check", "extra"], ["add"]):
@@ -421,8 +408,7 @@ def test_unknown_subcommand_is_a_usage_error(fails=None):
         eq(run(registry=path).returncode, 2, "no subcommand is a usage error", fails)
 
 
-def test_exit_codes_stay_distinct(fails=None):
-    fails = [] if fails is None else fails
+def test_exit_codes_stay_distinct(fails):
     """0 success, 1 a broken registry, 2 a refused request. Collapsing any two of
     them makes a shell script's `|| rc=$?` branch do the wrong thing."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -436,8 +422,7 @@ def test_exit_codes_stay_distinct(fails=None):
 
 
 # --- force mode: narrows verdicts after two failures, or pauses ---------------
-def test_force_trip_defaults_to_force_and_bans_self_build(fails=None):
-    fails = [] if fails is None else fails
+def test_force_trip_defaults_to_force_and_bans_self_build(fails):
     with tempfile.TemporaryDirectory() as tmp:
         reg, fj = registry(tmp, "r.tsv"), registry(tmp, "force.json")
         ok(run("force", "status", force=fj).stdout.startswith("off on_fail2=force"),
@@ -460,8 +445,7 @@ def test_force_trip_defaults_to_force_and_bans_self_build(fails=None):
            "force off accepts 自造 again", fails)
 
 
-def test_force_left_on_expires(fails=None):
-    fails = [] if fails is None else fails
+def test_force_left_on_expires(fails):
     with tempfile.TemporaryDirectory() as tmp:
         reg, fj = registry(tmp, "r.tsv"), registry(tmp, "force.json")
         old = (datetime.date.today() - datetime.timedelta(days=2)).isoformat()
@@ -474,8 +458,7 @@ def test_force_left_on_expires(fails=None):
            "expired force does not ban 自造", fails)
 
 
-def test_force_pause_mode_offers_three_ways_out(fails=None):
-    fails = [] if fails is None else fails
+def test_force_pause_mode_offers_three_ways_out(fails):
     with tempfile.TemporaryDirectory() as tmp:
         fj = registry(tmp, "force.json")
         eq(run("force", "mode", "pause", force=fj).returncode, 0, "mode pause accepted", fails)
@@ -488,8 +471,7 @@ def test_force_pause_mode_offers_three_ways_out(fails=None):
         ok(p.returncode == 0 and "manual" in p.stdout, "manual on works in pause mode", fails)
 
 
-def test_force_refuses_bad_args_and_survives_a_broken_file(fails=None):
-    fails = [] if fails is None else fails
+def test_force_refuses_bad_args_and_survives_a_broken_file(fails):
     with tempfile.TemporaryDirectory() as tmp:
         fj = registry(tmp, "force.json")
         for args in (("force",), ("force", "on"), ("force", "on", "robot", "x"),
@@ -503,8 +485,7 @@ def test_force_refuses_bad_args_and_survives_a_broken_file(fails=None):
 
 
 # --- community gate: a card needs a receipt, or says why it has none -----------
-def test_add_needs_a_fresh_community_receipt(fails=None):
-    fails = [] if fails is None else fails
+def test_add_needs_a_fresh_community_receipt(fails):
     with tempfile.TemporaryDirectory() as tmp:
         reg, led = registry(tmp, "r.tsv"), registry(tmp, "ledger.jsonl")
         p = run("add", "採用", "q", "pick", 90, registry=reg, ledger=led)
@@ -527,8 +508,7 @@ def test_add_needs_a_fresh_community_receipt(fails=None):
            "a new search opens the next card", fails)
 
 
-def test_add_gate_exemptions_and_degraded(fails=None):
-    fails = [] if fails is None else fails
+def test_add_gate_exemptions_and_degraded(fails):
     with tempfile.TemporaryDirectory() as tmp:
         reg, led = registry(tmp, "r.tsv"), registry(tmp, "ledger.jsonl")
         eq(run("add", "--quick", "設定", "q", "pick", 30, registry=reg, ledger=led).returncode, 0,
