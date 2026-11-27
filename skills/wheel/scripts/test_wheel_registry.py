@@ -26,6 +26,11 @@ import subprocess
 import sys
 import tempfile
 
+# These test_* functions are the aggregating harness run by main(): failed checks
+# are collected instead of raised. pytest must use test_wheel_harness.py, which
+# runs this file as a subprocess and honors that runner's exit code.
+__test__ = False
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLI = os.path.join(HERE, "wheel_registry.py")
 

@@ -12,6 +12,11 @@ import sys
 import tempfile
 import urllib.error
 
+# These test_* functions are the aggregating harness run by main(): failed checks
+# are collected instead of raised. pytest must use test_wheel_harness.py, which
+# runs this file as a subprocess and honors that runner's exit code.
+__test__ = False
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import wheel_community as wc  # noqa: E402
